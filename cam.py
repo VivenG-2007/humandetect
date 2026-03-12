@@ -2,32 +2,26 @@
 Human Detection + Filter + Face Effects Webcam App
 ====================================================
 Uses YOLOv8 for person segmentation + OpenCV Haar for face detection.
-Now with a CLICKABLE LEFT-SIDE PANEL — no keyboard needed!
+Clickable LEFT-SIDE PANEL — no keyboard needed!
 
 Install:
     pip install ultralytics opencv-python numpy
 
 Controls (keyboard still works too):
-  --- BODY FILTERS ---         --- FACE / CHARACTER EFFECTS ---
-  1  Raw                       E  Elf Ears
-  2  Neon Outline              V  Vampire Teeth
-  3  Cartoon                   A  Angel Wings + Halo
-  4  Anime                     D  Demon Horns
-  5  Pencil Sketch             M  Mermaid Look
-  6  Cyberpunk                 F  Fairy Sparkles
-  7  Pixel Art                 Y  Baby Face
-  8  Oil Painting              C  Child Look
-  9  Heat Vision               T  Teen Look
-  0  Glitch                    O  Old Age
-                               P  Age Progression (cycles young->old)
+  ─── BODY FILTERS ───────────────────────── ─── FACE / CHARACTER EFFECTS ───
+  1  Raw              6  Cyberpunk            E  Elf Ears
+  2  Neon Outline     7  Pixel Art            V  Vampire Teeth
+  3  Cartoon          8  Oil Painting         A  Angel Wings + Halo
+  4  Anime            9  Heat Vision          D  Demon Horns
+  5  Pencil Sketch    0  Glitch               M  Mermaid Look
+  R  Skeleton         X  Stick Figure         F  Fairy Sparkles
+  U  Bubble Replace                           Y  Baby Face
+                                              C  Child Look
+                                              T  Teen Look
+                                              O  Old Age
+                                              P  Age Progression
 
-  B  Cycle background    K  Toggle bounding boxes    S  Save    Q  Quit
-
-LEFT PANEL CLICK AREAS:
-  Body Filters section  → click any filter to activate
-  Face Effects section  → click any effect to toggle on/off
-  Backgrounds section   → click any background to switch
-  Action row (bottom)   → Boxes / Save / Quit buttons
+  B  Cycle background    K  Toggle boxes    S  Save    Q  Quit
 """
 
 import cv2
@@ -45,29 +39,41 @@ from ultralytics import YOLO
 # SIDEBAR LAYOUT CONSTANTS
 # ─────────────────────────────────────────────────────────────────────────────
 
-PANEL_W        = 210          # width of the left click panel
-BTN_H          = 30           # height of each button row
-SECTION_H      = 22           # height of a section header
-PAD            = 6            # horizontal padding inside button
+PANEL_W        = 230
+BTN_H          = 32
+SECTION_H      = 24
+PAD            = 6
 
-# Colours (BGR)
-C_BG           = (18,  18,  28)
-C_SECTION_BG   = (30,  30,  48)
-C_BTN          = (38,  38,  58)
-C_BTN_ACTIVE   = (0,  200, 120)
-C_BTN_HOVER    = (55,  55,  85)
-C_BORDER       = (60,  60,  90)
-C_ACTIVE_TEXT  = (10,  10,  10)
-C_TEXT         = (190, 190, 210)
+# Colour palette (BGR)
+C_BG           = (14,  14,  22)
+C_BG2          = (20,  20,  32)
+C_SECTION_BG   = (26,  26,  44)
+C_BTN          = (32,  32,  52)
+C_BTN_HOVER    = (48,  48,  75)
+C_BTN_ACTIVE   = (0,  210, 130)
+C_BTN_ACTIVE2  = (0,  170, 100)
+C_BORDER       = (50,  50,  80)
+C_BORDER_ACT   = (0,  240, 150)
+C_ACTIVE_TEXT  = (8,    8,   8)
+C_TEXT         = (185, 185, 208)
 C_SECTION_TEXT = (0,  220, 180)
 C_ACCENT       = (0,  180, 255)
-C_SAVE_BTN     = (0,  140, 220)
-C_QUIT_BTN     = (40,  40, 200)
-C_BOX_BTN      = (160, 100,  20)
+C_SAVE_BTN     = (30, 120, 200)
+C_QUIT_BTN     = (160,  40,  40)
+C_BOX_BTN_ON   = (20, 130,  20)
+C_BOX_BTN_OFF  = (55,  55,  80)
+C_NEW_BADGE    = (0,  140, 255)
 
-FONT           = cv2.FONT_HERSHEY_SIMPLEX
-FONT_SMALL     = 0.38
-FONT_SEC       = 0.40
+# Filter category colours (dot indicators)
+CAT_BODY   = (0,  200, 140)
+CAT_NEW    = (0,  160, 255)
+CAT_FACE   = (200, 80, 220)
+CAT_BG     = (220, 140,  20)
+
+FONT       = cv2.FONT_HERSHEY_SIMPLEX
+FS         = 0.37
+FS_SEC     = 0.40
+FS_BADGE   = 0.28
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CAMERA FINDER
@@ -144,18 +150,18 @@ class FaceDetector:
         faces = self.face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(60, 60))
         return faces if len(faces) > 0 else []
 
-    def detect_eyes(self, frame, face_rect):
-        x, y, w, h = face_rect
-        roi_gray = cv2.cvtColor(frame[y:y+h, x:x+w], cv2.COLOR_BGR2GRAY)
-        eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 3)
-        result = []
-        for (ex, ey, ew, eh) in eyes:
-            result.append((x+ex, y+ey, ew, eh))
-        return result
-
 # ─────────────────────────────────────────────────────────────────────────────
 # DRAWING UTILITIES
 # ─────────────────────────────────────────────────────────────────────────────
+
+def draw_glow_line(img, p1, p2, col, glow_col, thickness=2, glow_t=8):
+    """Draw a line with a soft glow halo."""
+    cv2.line(img, p1, p2, glow_col, glow_t, cv2.LINE_AA)
+    cv2.line(img, p1, p2, col,      thickness, cv2.LINE_AA)
+
+def draw_glow_circle(img, center, r, col, glow_col, thickness=-1, glow_t=10):
+    cv2.circle(img, center, r + glow_t//2, glow_col, -1)
+    cv2.circle(img, center, r, col, thickness, cv2.LINE_AA)
 
 def blend_overlay(canvas, overlay_bgr, overlay_alpha, x, y):
     oh, ow = overlay_bgr.shape[:2]
@@ -163,24 +169,14 @@ def blend_overlay(canvas, overlay_bgr, overlay_alpha, x, y):
     x1c = max(x, 0);        y1c = max(y, 0)
     x2c = min(x + ow, cw);  y2c = min(y + oh, ch)
     x1o = x1c - x;          y1o = y1c - y
-    x2o = x1o + (x2c - x1c)
-    y2o = y1o + (y2c - y1c)
-    if x2c <= x1c or y2c <= y1c:
-        return canvas
+    x2o = x1o + (x2c - x1c); y2o = y1o + (y2c - y1c)
+    if x2c <= x1c or y2c <= y1c: return canvas
     roi = canvas[y1c:y2c, x1c:x2c].astype(np.float32)
     src = overlay_bgr[y1o:y2o, x1o:x2o].astype(np.float32)
     a   = overlay_alpha[y1o:y2o, x1o:x2o].astype(np.float32) / 255.0
     a3  = np.stack([a, a, a], axis=2)
     canvas[y1c:y2c, x1c:x2c] = np.clip(src*a3 + roi*(1-a3), 0, 255).astype(np.uint8)
     return canvas
-
-def draw_filled_ellipse(img, center, axes, angle, color, alpha=255):
-    overlay = np.zeros_like(img)
-    cv2.ellipse(overlay, center, axes, angle, 0, 360, color, -1)
-    a    = alpha / 255.0
-    mask = (overlay.sum(axis=2) > 0).astype(np.float32) * a
-    m3   = np.stack([mask, mask, mask], axis=2)
-    return np.clip(img.astype(np.float32)*(1-m3) + overlay.astype(np.float32)*m3, 0, 255).astype(np.uint8)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ★  FACE / CHARACTER EFFECT FUNCTIONS
@@ -267,8 +263,6 @@ def effect_mermaid(frame, faces, t):
     for i in range(8):
         lx=int(w_f*(0.1+0.1*i+0.04*math.sin(t*1.2+i))); ly=int(h_f*(0.2+0.06*math.sin(t*0.8+i*1.3)))
         cv2.ellipse(out,(lx,ly),(int(30+10*math.sin(t+i)),8),30+i*10,0,360,(200,230,220),-1)
-        ov2=out.copy(); cv2.ellipse(ov2,(lx,ly),(int(30+10*math.sin(t+i)),8),30+i*10,0,360,(200,230,220),-1)
-        out=cv2.addWeighted(out,0.85,ov2,0.15,0)
     for (fx,fy,fw,fh) in faces:
         cx=fx+fw//2; scale_r=fw//14
         for row in range(8):
@@ -293,8 +287,6 @@ def effect_fairy(frame, faces, t):
         bri=0.5+0.5*math.sin(t*sp+ph); sz=int(1+bri*5); alpha=int(bri*255)
         col=(int(180+bri*75),int(180+bri*75),255); ov=out.copy()
         cv2.line(ov,(sx-sz,sy),(sx+sz,sy),col,1); cv2.line(ov,(sx,sy-sz),(sx,sy+sz),col,1)
-        cv2.line(ov,(sx-sz//2,sy-sz//2),(sx+sz//2,sy+sz//2),col,1)
-        cv2.line(ov,(sx+sz//2,sy-sz//2),(sx-sz//2,sy+sz//2),col,1)
         cv2.circle(ov,(sx,sy),max(1,sz//2),(255,255,255),-1)
         out=cv2.addWeighted(out,1-alpha/400,ov,alpha/400,0)
     for (fx,fy,fw,fh) in faces:
@@ -303,8 +295,7 @@ def effect_fairy(frame, faces, t):
             px=int(fx+fw//2+r*math.cos(rad)); py=int(fy+fh//2+r*math.sin(rad)*0.6)
             bri2=0.5+0.5*math.sin(t*3+i); sz2=int(2+bri2*4)
             cv2.circle(out,(px,py),sz2,(int(200*bri2),int(160*bri2),255),-1)
-    vig=np.zeros_like(out,dtype=np.float32); vig[:,:,0]=80; vig[:,:,2]=40
-    return np.clip(out.astype(np.float32)*0.92+vig*0.08,0,255).astype(np.uint8)
+    return out
 
 def effect_baby_face(frame, faces, t):
     out=frame.copy()
@@ -314,7 +305,9 @@ def effect_baby_face(frame, faces, t):
         big_w=int(fw*1.25); big_h=int(fh*1.15); big=cv2.resize(roi,(big_w,big_h))
         bx=cx-big_w//2; by=cy-big_h//2; bx2,by2=bx+big_w,by+big_h
         bx=max(0,bx); by=max(0,by); bx2=min(out.shape[1],bx2); by2=min(out.shape[0],by2)
-        cw=bx2-bx; ch=by2-by; resized_crop=cv2.resize(big,(cw,ch))
+        cw=bx2-bx; ch=by2-by
+        if cw<=0 or ch<=0: continue
+        resized_crop=cv2.resize(big,(cw,ch))
         paste_mask=np.zeros((ch,cw),dtype=np.uint8)
         cv2.ellipse(paste_mask,(cw//2,ch//2),(cw//2-2,ch//2-2),0,0,360,255,-1)
         paste_mask=cv2.GaussianBlur(paste_mask,(21,21),0); a3=np.stack([paste_mask/255.]*3,axis=2)
@@ -323,19 +316,12 @@ def effect_baby_face(frame, faces, t):
         for side in [-1,1]:
             chx=cx+side*int(fw*0.32); chy=fy+int(fh*0.62); ov=out.copy()
             cv2.circle(ov,(chx,chy),cheek_r,(100,130,220),-1); out=cv2.addWeighted(out,0.75,ov,0.25,0)
-        ley=fy+int(fh*0.38); lex=fx+int(fw*0.28); rex=fx+int(fw*0.72); er=fw//10
-        for ex_,ey_ in [(lex,ley),(rex,ley)]:
-            cv2.circle(out,(ex_,ey_),int(er*1.3),(255,255,255),-1); cv2.circle(out,(ex_,ey_),er,(50,50,50),-1)
-            cv2.circle(out,(ex_+er//3,ey_-er//3),er//3,(255,255,255),-1)
-        hsv=cv2.cvtColor(out[fy:fy+fh,fx:fx+fw],cv2.COLOR_BGR2HSV).astype(np.float32)
-        hsv[:,:,1]=np.clip(hsv[:,:,1]*0.7,0,255); hsv[:,:,2]=np.clip(hsv[:,:,2]*1.1,0,255)
-        out[fy:fy+fh,fx:fx+fw]=cv2.cvtColor(hsv.astype(np.uint8),cv2.COLOR_HSV2BGR)
     return out
 
 def effect_child(frame, faces, t):
     out=frame.copy()
     for (fx,fy,fw,fh) in faces:
-        cx=fx+fw//2; cy=fy+fh//2; roi=out[fy:fy+fh,fx:fx+fw]
+        cx=fx+fw//2; roi=out[fy:fy+fh,fx:fx+fw]
         if roi.size==0: continue
         smooth=cv2.bilateralFilter(roi,9,60,60)
         hsv=cv2.cvtColor(smooth,cv2.COLOR_BGR2HSV).astype(np.float32)
@@ -345,12 +331,6 @@ def effect_child(frame, faces, t):
         for _ in range(18):
             frx=int(fx+rng.integers(fw//4,3*fw//4)); fry=int(fy+rng.integers(fh//3,2*fh//3))
             cv2.circle(out,(frx,fry),2,(80,100,160),-1)
-        nx=cx; ny=fy+int(fh*0.58); ov=out.copy()
-        cv2.circle(ov,(nx,ny),fw//14,(210,220,240),-1); out=cv2.addWeighted(out,0.80,ov,0.20,0)
-        cheek_r=fw//7
-        for side in [-1,1]:
-            chx=cx+side*int(fw*0.30); chy=fy+int(fh*0.60); ov2=out.copy()
-            cv2.circle(ov2,(chx,chy),cheek_r,(130,160,230),-1); out=cv2.addWeighted(out,0.80,ov2,0.20,0)
     return out
 
 def effect_teen(frame, faces, t):
@@ -363,14 +343,7 @@ def effect_teen(frame, faces, t):
         sharpened[:,:,0]=np.clip(sharpened[:,:,0]*1.1,0,255)
         sharpened[:,:,1]=np.clip(sharpened[:,:,1]*1.05,0,255)
         sharpened[:,:,2]=np.clip(sharpened[:,:,2]*0.93,0,255)
-        out[fy:fy+fh,fx:fx+fw]=sharpened.astype(np.uint8); cx=fx+fw//2
-        for side in [-1,1]:
-            ex=fx+(fw//10 if side==-1 else 9*fw//10); ey=fy+int(fh*0.55)
-            cv2.circle(out,(ex,ey),fw//18,(40,160,200),2)
-            cv2.circle(out,(ex,ey+fw//18+3),3,(40,160,200),-1)
-        for side in [-1,1]:
-            ex2=cx+side*fw//4; ey2=fy+int(fh*0.36)
-            cv2.line(out,(ex2-fw//8,ey2),(ex2+fw//8+side*4,ey2-2),(20,20,50),2)
+        out[fy:fy+fh,fx:fx+fw]=sharpened.astype(np.uint8)
     return out
 
 def effect_old_age(frame, faces, t):
@@ -378,7 +351,7 @@ def effect_old_age(frame, faces, t):
     for (fx,fy,fw,fh) in faces:
         roi=out[fy:fy+fh,fx:fx+fw].copy()
         if roi.size==0: continue
-        cx=fw//2; cy=fh//2
+        cx=fw//2
         hsv=cv2.cvtColor(roi,cv2.COLOR_BGR2HSV).astype(np.float32)
         hsv[:,:,1]=np.clip(hsv[:,:,1]*0.40,0,255); hsv[:,:,2]=np.clip(hsv[:,:,2]*0.90,0,255)
         roi=cv2.cvtColor(hsv.astype(np.uint8),cv2.COLOR_HSV2BGR)
@@ -388,16 +361,6 @@ def effect_old_age(frame, faces, t):
             wy=int(fh*(0.15+i*0.05)); wave=[int(4*math.sin(x*0.3+i)) for x in range(fw)]
             pts=[(x,wy+wave[x]) for x in range(fw)]
             for j in range(len(pts)-1): cv2.line(roi,pts[j],pts[j+1],(100,100,110),1)
-        for side in [-1,1]:
-            ex=cx+side*fw//4; ey=int(fh*0.43)
-            cv2.ellipse(roi,(ex,ey+4),(fw//10,fw//20),0,0,180,(80,85,95),2)
-        for side in [-1,1]:
-            sx=cx+side*fw//5
-            cv2.line(roi,(sx,int(fh*0.52)),(sx+side*3,int(fh*0.72)),(90,90,100),1)
-        for side in [-1,1]:
-            tx=fw//8 if side==-1 else 7*fw//8
-            for dy in range(int(fh*0.08)):
-                roi[dy,tx-fw//16:tx+fw//16]=np.clip(roi[dy,tx-fw//16:tx+fw//16].astype(np.float32)*0.5+160,0,255).astype(np.uint8)
         out[fy:fy+fh,fx:fx+fw]=roi
     return out
 
@@ -405,11 +368,11 @@ AGE_PROGRESSION_STAGE=[0]
 
 def effect_age_progression(frame, faces, t):
     stage=AGE_PROGRESSION_STAGE[0]
-    funcs=[effect_baby_face,effect_child,effect_teen,f_raw,effect_old_age]
+    funcs=[effect_baby_face,effect_child,effect_teen,lambda f,fa,t_: f.copy(),effect_old_age]
     names=["Baby","Child","Teen","Adult","Elderly"]
     out=funcs[stage](frame,faces,t)
     h_f,w_f=frame.shape[:2]
-    label=f"Age Stage: {names[stage]}  (click P to advance)"
+    label=f"Age Stage: {names[stage]}"
     cv2.rectangle(out,(0,h_f-55),(len(label)*11+20,h_f-32),(0,0,0),-1)
     cv2.putText(out,label,(10,h_f-38),cv2.FONT_HERSHEY_SIMPLEX,0.55,(0,230,180),1)
     return out
@@ -429,7 +392,7 @@ FACE_EFFECTS={
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BODY FILTERS
+# BODY FILTERS (original)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def m3f(mask):
@@ -438,8 +401,8 @@ def m3f(mask):
 def f_raw(frame,mask): return frame.copy()
 
 def f_neon_outline(frame,mask):
-    dark=  (frame*0.12).astype(np.uint8)
-    hard=  (mask>127).astype(np.uint8)*255
+    dark=(frame*0.12).astype(np.uint8)
+    hard=(mask>127).astype(np.uint8)*255
     outline=cv2.Canny(hard,30,100)
     outline=cv2.dilate(outline,np.ones((3,3),np.uint8),iterations=3)
     gw=cv2.GaussianBlur(outline,(25,25),0); gn=cv2.GaussianBlur(outline,(7,7),0)
@@ -523,44 +486,404 @@ def f_glitch(frame,mask):
     out[::4,:,1]=np.clip(out[::4,:,1].astype(np.int16)+40,0,255).astype(np.uint8)
     return out
 
-BODY_FILTERS={
-    ord('1'):("Raw",           f_raw),
-    ord('2'):("Neon Outline",  f_neon_outline),
-    ord('3'):("Cartoon",       f_cartoon),
-    ord('4'):("Anime",         f_anime),
-    ord('5'):("Pencil Sketch", f_pencil_sketch),
-    ord('6'):("Cyberpunk",     f_cyberpunk),
-    ord('7'):("Pixel Art",     f_pixel_art),
-    ord('8'):("Oil Painting",  f_oil_paint),
-    ord('9'):("Heat Vision",   f_heat_vision),
-    ord('0'):("Glitch",        f_glitch),
+# ─────────────────────────────────────────────────────────────────────────────
+# ★  NEW FILTERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _estimate_skeleton_joints(x, y, w, h):
+    """Estimate 16 body joint positions from a bounding box."""
+    cx = x + w // 2
+    # Head & torso
+    head_c  = (cx,               y + int(h * 0.07))
+    neck    = (cx,               y + int(h * 0.17))
+    l_sho   = (x + int(w*0.23), y + int(h * 0.24))
+    r_sho   = (x + int(w*0.77), y + int(h * 0.24))
+    spine_m = (cx,               y + int(h * 0.38))
+    pelvis  = (cx,               y + int(h * 0.54))
+    # Arms
+    l_elb   = (x + int(w*0.10), y + int(h * 0.42))
+    r_elb   = (x + int(w*0.90), y + int(h * 0.42))
+    l_wri   = (x + int(w*0.06), y + int(h * 0.60))
+    r_wri   = (x + int(w*0.94), y + int(h * 0.60))
+    # Legs
+    l_hip   = (x + int(w*0.37), y + int(h * 0.54))
+    r_hip   = (x + int(w*0.63), y + int(h * 0.54))
+    l_kne   = (x + int(w*0.34), y + int(h * 0.73))
+    r_kne   = (x + int(w*0.66), y + int(h * 0.73))
+    l_ank   = (x + int(w*0.32), y + int(h * 0.93))
+    r_ank   = (x + int(w*0.68), y + int(h * 0.93))
+
+    joints = [head_c, neck, l_sho, r_sho, spine_m, pelvis,
+              l_elb, r_elb, l_wri, r_wri,
+              l_hip, r_hip, l_kne, r_kne, l_ank, r_ank]
+
+    bones = [
+        (neck,  head_c),
+        (neck,  spine_m),
+        (spine_m, pelvis),
+        (neck,  l_sho), (l_sho, l_elb), (l_elb, l_wri),
+        (neck,  r_sho), (r_sho, r_elb), (r_elb, r_wri),
+        (pelvis, l_hip), (l_hip, l_kne), (l_kne, l_ank),
+        (pelvis, r_hip), (r_hip, r_kne), (r_kne, r_ank),
+    ]
+    head_r = max(10, int(w * 0.12))
+    return joints, bones, head_c, head_r
+
+
+def f_skeleton(frame, mask):
+    """
+    X-ray / neon skeleton: hides the body, draws an estimated
+    glowing green skeleton on a dark background.
+    """
+    h, w = frame.shape[:2]
+    t    = time.time()
+
+    # Dark background that still lets the un-masked scene bleed through faintly
+    bg_dark = (frame * 0.08).astype(np.uint8)
+    out     = bg_dark.copy()
+
+    hard = (mask > 127).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(hard, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Pulse timing for joint glow
+    pulse = 0.85 + 0.15 * math.sin(t * 4)
+
+    for cnt in contours:
+        bx, by, bw, bh = cv2.boundingRect(cnt)
+        if bw < 30 or bh < 50:
+            continue
+
+        joints, bones, head_c, head_r = _estimate_skeleton_joints(bx, by, bw, bh)
+
+        # ── Bones ─────────────────────────────────────────────────
+        for p1, p2 in bones:
+            # outer glow (wide, dark green)
+            cv2.line(out, p1, p2, (0, 60, 20), 10, cv2.LINE_AA)
+            # mid glow
+            cv2.line(out, p1, p2, (0, 160, 60), 4, cv2.LINE_AA)
+            # bright core
+            cv2.line(out, p1, p2, (0, 255, 100), 2, cv2.LINE_AA)
+
+        # ── Ribcage hint ──────────────────────────────────────────
+        r_cx, r_cy = joints[0][0], joints[4][1]     # spine mid x, spine mid y
+        rib_w = int(bw * 0.30); rib_h = int(bh * 0.12)
+        for i in range(3):
+            ry = r_cy - int(rib_h * 0.5 * i)
+            cv2.ellipse(out, (r_cx, ry), (rib_w, max(4, rib_h-i*2)),
+                        0, 0, 360, (0, 100, 40), 1, cv2.LINE_AA)
+
+        # ── Skull ─────────────────────────────────────────────────
+        cv2.circle(out, head_c, head_r + 6, (0, 40, 15), -1)     # glow fill
+        cv2.circle(out, head_c, head_r,     (0, 60, 25), -1)     # skull fill
+        cv2.circle(out, head_c, head_r,     (0, 220, 80), 2, cv2.LINE_AA)
+
+        # Eye sockets
+        eye_off = int(head_r * 0.35)
+        eye_r   = int(head_r * 0.22)
+        for ex_off in [-eye_off, eye_off]:
+            ex = head_c[0] + ex_off
+            ey = head_c[1] + int(head_r * 0.1)
+            glow_a = int(pulse * 255)
+            ov = out.copy()
+            cv2.circle(ov, (ex, ey), eye_r + 4, (0, 200, 60), -1)
+            out = cv2.addWeighted(out, 1 - 0.4 * pulse, ov, 0.4 * pulse, 0)
+            cv2.circle(out, (ex, ey), eye_r, (0, 255, 120), -1)
+
+        # Teeth hint
+        teeth_y = head_c[1] + int(head_r * 0.55)
+        t_w     = int(head_r * 0.55)
+        cv2.line(out, (head_c[0]-t_w, teeth_y), (head_c[0]+t_w, teeth_y), (0, 200, 70), 1)
+        for ti in range(-2, 3):
+            tx = head_c[0] + ti * (t_w // 2)
+            cv2.line(out, (tx, teeth_y), (tx, teeth_y + int(head_r*0.25)), (0, 180, 60), 1)
+
+        # ── Joints (spheres) ──────────────────────────────────────
+        for j in joints[1:]:          # skip head_c, drawn separately
+            jr = max(4, int(bw * 0.025))
+            cv2.circle(out, j, jr + 4, (0, 50, 20), -1)
+            cv2.circle(out, j, jr,     (0, 255, 100), -1)
+            cv2.circle(out, j, jr,     (100, 255, 180), 1, cv2.LINE_AA)
+
+    # Faint green scanline overlay for X-ray feel
+    scanline = np.zeros_like(out, dtype=np.uint8)
+    scanline[::3] = [0, 12, 4]
+    out = np.clip(out.astype(np.int16) + scanline.astype(np.int16), 0, 255).astype(np.uint8)
+
+    return out
+
+
+def f_stick_figure(frame, mask):
+    """
+    Minimalist animated stick figure: erases the person and draws a
+    colourful neon stick figure with a round head.
+    """
+    h, w = frame.shape[:2]
+    t    = time.time()
+
+    # Dark-tinted background (background scene, person erased)
+    bg = (frame * 0.10).astype(np.uint8)
+    # Keep background behind non-person pixels
+    bg_alpha = (1.0 - mask.astype(np.float32)/255.0)
+    scene    = (frame.astype(np.float32) * np.stack([bg_alpha]*3, axis=2)
+                + bg.astype(np.float32) * np.stack([1-bg_alpha]*3, axis=2))
+    out = np.clip(scene, 0, 255).astype(np.uint8)
+
+    hard = (mask > 127).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(hard, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Colour cycles over time
+    hue   = int((t * 40) % 180)
+    c_hsv = np.uint8([[[hue, 255, 255]]])
+    stick_col = tuple(int(v) for v in cv2.cvtColor(c_hsv, cv2.COLOR_HSV2BGR)[0][0])
+    glow_col  = tuple(max(0, v//3) for v in stick_col)
+
+    for cnt in contours:
+        bx, by, bw, bh = cv2.boundingRect(cnt)
+        if bw < 30 or bh < 50:
+            continue
+
+        joints, bones, head_c, head_r = _estimate_skeleton_joints(bx, by, bw, bh)
+
+        # Slight wiggle animation
+        wiggle_scale = 0.015
+        def w_pt(p):
+            wx = int(p[0] + bw * wiggle_scale * math.sin(t * 3 + p[1] * 0.05))
+            wy = int(p[1] + bh * wiggle_scale * math.cos(t * 2.5 + p[0] * 0.05))
+            return (wx, wy)
+
+        # Draw bones
+        for p1, p2 in bones:
+            wp1, wp2 = w_pt(p1), w_pt(p2)
+            cv2.line(out, wp1, wp2, glow_col, 10, cv2.LINE_AA)
+            cv2.line(out, wp1, wp2, stick_col, 4, cv2.LINE_AA)
+            cv2.line(out, wp1, wp2, (255,255,255), 1, cv2.LINE_AA)
+
+        # Joints
+        for j in joints[1:]:
+            wj = w_pt(j)
+            cv2.circle(out, wj, 7, glow_col, -1)
+            cv2.circle(out, wj, 4, stick_col, -1)
+            cv2.circle(out, wj, 4, (255,255,255), 1, cv2.LINE_AA)
+
+        # Head circle
+        wh = w_pt(head_c)
+        cv2.circle(out, wh, head_r + 6, glow_col, -1)
+        cv2.circle(out, wh, head_r,     stick_col, 3, cv2.LINE_AA)
+        cv2.circle(out, wh, head_r,     (255,255,255), 1, cv2.LINE_AA)
+
+        # Smiley dots (eyes + smile)
+        eye_off = int(head_r * 0.35)
+        eye_r   = max(2, int(head_r * 0.12))
+        for ex_off in [-eye_off, eye_off]:
+            cv2.circle(out, (wh[0]+ex_off, wh[1]-int(head_r*0.15)), eye_r,
+                       (255,255,255), -1)
+        # Smile arc
+        cv2.ellipse(out, (wh[0], wh[1]+int(head_r*0.1)),
+                    (int(head_r*0.35), int(head_r*0.22)), 0, 0, 180,
+                    (255,255,255), 1, cv2.LINE_AA)
+
+    return out
+
+
+# ── Bubble state (persists between frames for smooth physics) ──────────────
+_BUBBLE_STATE: list = []
+
+def _init_bubbles(n=60):
+    rng = np.random.default_rng(int(time.time()*100) % 100000)
+    bubbles = []
+    for _ in range(n):
+        bubbles.append({
+            'rx': rng.uniform(0.05, 0.95),    # relative x in mask bbox
+            'ry': rng.uniform(0.05, 0.95),    # relative y
+            'r':  int(rng.integers(10, 40)),  # radius px
+            'vx': rng.uniform(-0.002, 0.002),
+            'vy': rng.uniform(-0.005, -0.001),
+            'hue': int(rng.integers(0, 180)),
+            'phase': rng.uniform(0, math.pi*2),
+            'born': time.time(),
+        })
+    return bubbles
+
+def f_bubbles(frame, mask):
+    """
+    Replaces the person's silhouette with a swarm of colourful
+    animated bubbles; background is kept visible.
+    """
+    global _BUBBLE_STATE
+    h, w = frame.shape[:2]
+    t    = time.time()
+
+    if len(_BUBBLE_STATE) == 0:
+        _BUBBLE_STATE = _init_bubbles(70)
+
+    hard  = (mask > 127).astype(np.uint8) * 255
+
+    # Background: keep non-person pixels, darken + blue-tint person area
+    bg_alpha = 1.0 - mask.astype(np.float32) / 255.0
+    tint     = np.zeros_like(frame, dtype=np.float32)
+    tint[:,:,0] = 30; tint[:,:,1] = 10
+    bg = np.clip(
+        frame.astype(np.float32) * np.stack([bg_alpha]*3, axis=2)
+        + tint * np.stack([1-bg_alpha]*3, axis=2),
+        0, 255
+    ).astype(np.uint8)
+
+    bubble_layer = np.zeros((h, w, 4), dtype=np.uint8)  # BGRA for alpha compositing
+
+    # Find overall person bounding box for coordinate mapping
+    cnts, _ = cv2.findContours(hard, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    all_pts = []
+    for c in cnts:
+        all_pts.extend(c.reshape(-1,2).tolist())
+
+    if not all_pts:
+        return bg  # nobody detected
+
+    all_pts = np.array(all_pts)
+    gx1 = int(all_pts[:,0].min()); gx2 = int(all_pts[:,0].max())
+    gy1 = int(all_pts[:,1].min()); gy2 = int(all_pts[:,1].max())
+    gw  = max(1, gx2 - gx1);  gh = max(1, gy2 - gy1)
+
+    dead = []
+    for i, b in enumerate(_BUBBLE_STATE):
+        # Update position
+        b['ry'] += b['vy']
+        b['rx'] += b['vx'] + 0.001 * math.sin(t * 1.5 + b['phase'])
+
+        # Wrap / recycle bubble that floats out
+        if b['ry'] < -b['r']/gh or b['rx'] < -0.1 or b['rx'] > 1.1:
+            dead.append(i)
+            continue
+
+        # World coords
+        bx_c = int(gx1 + b['rx'] * gw)
+        by_c = int(gy1 + b['ry'] * gh)
+        br   = b['r']
+
+        # Only draw bubble if its centre is roughly inside the mask
+        if 0 <= bx_c < w and 0 <= by_c < h and hard[by_c, bx_c] > 64:
+            # Colour: slowly shift hue
+            hue = int((b['hue'] + t * 20) % 180)
+            sat = 200; val = 230
+            c_hsv = np.uint8([[[hue, sat, val]]])
+            bgr   = tuple(int(v) for v in cv2.cvtColor(c_hsv, cv2.COLOR_HSV2BGR)[0][0])
+
+            # Wobble radius
+            wobble = 1.0 + 0.06 * math.sin(t * 3 + b['phase'])
+            wr = max(4, int(br * wobble))
+
+            # Draw on bubble_layer (BGRA)
+            pulse_a = int(160 + 40 * math.sin(t * 2 + b['phase']))
+
+            # Outer glow
+            cv2.circle(bubble_layer, (bx_c, by_c), wr + 4,
+                       (bgr[0]//2, bgr[1]//2, bgr[2]//2, pulse_a//4), -1)
+            # Fill (semi-transparent)
+            cv2.circle(bubble_layer, (bx_c, by_c), wr,
+                       (bgr[0], bgr[1], bgr[2], pulse_a), -1)
+            # Bright rim
+            cv2.circle(bubble_layer, (bx_c, by_c), wr,
+                       (255, 255, 255, 200), 1, cv2.LINE_AA)
+            # Specular highlight (top-left)
+            hx = bx_c - wr // 3;  hy = by_c - wr // 3
+            hl_r = max(2, wr // 4)
+            cv2.circle(bubble_layer, (hx, hy), hl_r, (255, 255, 255, 220), -1)
+            # Inner shine arc
+            cv2.ellipse(bubble_layer, (bx_c - wr//4, by_c - wr//4),
+                        (wr//3, wr//4), -30, 200, 320,
+                        (255, 255, 255, 100), 1, cv2.LINE_AA)
+
+    # Recycle dead bubbles
+    rng2 = np.random.default_rng(int(t * 1000) % 100000)
+    for i in sorted(dead, reverse=True):
+        _BUBBLE_STATE[i] = {
+            'rx': rng2.uniform(0.05, 0.95),
+            'ry': rng2.uniform(0.6, 1.1),
+            'r':  int(rng2.integers(10, 40)),
+            'vx': rng2.uniform(-0.002, 0.002),
+            'vy': rng2.uniform(-0.005, -0.001),
+            'hue': int(rng2.integers(0, 180)),
+            'phase': rng2.uniform(0, math.pi*2),
+            'born': t,
+        }
+
+    # Composite bubble_layer onto bg
+    b_bgr  = bubble_layer[:,:,:3].astype(np.float32)
+    b_a    = bubble_layer[:,:,3].astype(np.float32) / 255.0
+    b_a3   = np.stack([b_a, b_a, b_a], axis=2)
+
+    # Only paste bubbles inside person mask area
+    mask_f = (mask.astype(np.float32) / 255.0)
+    mask3  = np.stack([mask_f, mask_f, mask_f], axis=2)
+    combined_a = b_a3 * mask3
+
+    out = np.clip(
+        bg.astype(np.float32) * (1 - combined_a) + b_bgr * combined_a,
+        0, 255
+    ).astype(np.uint8)
+
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FILTER REGISTRY
+# ─────────────────────────────────────────────────────────────────────────────
+
+BODY_FILTERS = {
+    ord('1'): ("Raw",           f_raw),
+    ord('2'): ("Neon Outline",  f_neon_outline),
+    ord('3'): ("Cartoon",       f_cartoon),
+    ord('4'): ("Anime",         f_anime),
+    ord('5'): ("Pencil Sketch", f_pencil_sketch),
+    ord('6'): ("Cyberpunk",     f_cyberpunk),
+    ord('7'): ("Pixel Art",     f_pixel_art),
+    ord('8'): ("Oil Painting",  f_oil_paint),
+    ord('9'): ("Heat Vision",   f_heat_vision),
+    ord('0'): ("Glitch",        f_glitch),
+    # ── NEW ──
+    ord('r'): ("Skeleton",      f_skeleton),
+    ord('x'): ("Stick Figure",  f_stick_figure),
+    ord('u'): ("Bubbles",       f_bubbles),
 }
 
-# Ordered lists for sidebar layout
-BODY_FILTER_LIST=[
-    (ord('1'),"1","Raw"),       (ord('2'),"2","Neon Outline"),
-    (ord('3'),"3","Cartoon"),   (ord('4'),"4","Anime"),
-    (ord('5'),"5","Pencil"),    (ord('6'),"6","Cyberpunk"),
-    (ord('7'),"7","Pixel Art"), (ord('8'),"8","Oil Paint"),
-    (ord('9'),"9","Heat Vis"),  (ord('0'),"0","Glitch"),
+# Ordered lists for sidebar (body filters split into two columns visually)
+BODY_FILTER_LIST = [
+    (ord('1'), "1", "Raw",         False),
+    (ord('2'), "2", "Neon Outline",False),
+    (ord('3'), "3", "Cartoon",     False),
+    (ord('4'), "4", "Anime",       False),
+    (ord('5'), "5", "Pencil Sketch",False),
+    (ord('6'), "6", "Cyberpunk",   False),
+    (ord('7'), "7", "Pixel Art",   False),
+    (ord('8'), "8", "Oil Painting",False),
+    (ord('9'), "9", "Heat Vision", False),
+    (ord('0'), "0", "Glitch",      False),
+    (ord('r'), "R", "Skeleton",    True),   # True = NEW badge
+    (ord('x'), "X", "Stick Figure",True),
+    (ord('u'), "U", "Bubbles",     True),
 ]
 
-FACE_EFFECT_LIST=[
-    (ord('e'),"E","Elf Ears"),      (ord('v'),"V","Vampire"),
-    (ord('a'),"A","Angel Wings"),   (ord('d'),"D","Demon Horns"),
-    (ord('m'),"M","Mermaid"),       (ord('f'),"F","Fairy"),
-    (ord('y'),"Y","Baby Face"),     (ord('c'),"C","Child"),
-    (ord('t'),"T","Teen"),          (ord('o'),"O","Old Age"),
-    (ord('p'),"P","Age Prog"),
+FACE_EFFECT_LIST = [
+    (ord('e'), "E", "Elf Ears"),
+    (ord('v'), "V", "Vampire"),
+    (ord('a'), "A", "Angel Wings"),
+    (ord('d'), "D", "Demon Horns"),
+    (ord('m'), "M", "Mermaid"),
+    (ord('f'), "F", "Fairy"),
+    (ord('y'), "Y", "Baby Face"),
+    (ord('c'), "C", "Child"),
+    (ord('t'), "T", "Teen"),
+    (ord('o'), "O", "Old Age"),
+    (ord('p'), "P", "Age Prog"),
 ]
 
-BG_LIST=[
-    ("Space",   (80, 0, 100)),
-    ("Forest",  (20,130,  20)),
-    ("Ocean",   (160, 80,  0)),
-    ("Sunset",  (20,100,200)),
-    ("Matrix",  (0, 160,  0)),
-    ("None",    (60, 60,  60)),
+BG_LIST = [
+    ("Space",  (80,  0, 100)),
+    ("Forest", (20,130,  20)),
+    ("Ocean",  (160, 80,   0)),
+    ("Sunset", (20, 100, 200)),
+    ("Matrix", (0,  160,   0)),
+    ("None",   (60,  60,  60)),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -582,24 +905,17 @@ def make_space_bg(h,w):
 
 def make_forest_bg(h,w):
     bg=np.zeros((h,w,3),dtype=np.uint8); bg[:h//2]=[180,220,120]; bg[h//2:]=[25,90,15]
-    cv2.circle(bg,(w-80,60),50,(40,210,255),-1); rng=np.random.default_rng(5)
+    rng=np.random.default_rng(5)
     for tx in range(20,w,80):
         th=int(rng.integers(70,130)); ty=h//2
         cv2.rectangle(bg,(tx+28,ty-th),(tx+42,ty+5),(35,70,15),-1)
         cv2.circle(bg,(tx+35,ty-th),55,(15,130,25),-1)
-        cv2.circle(bg,(tx+18,ty-th+25),38,(20,150,30),-1)
-        cv2.circle(bg,(tx+52,ty-th+25),38,(18,140,28),-1)
     return bg
 
 def make_ocean_bg(h,w):
     bg=np.zeros((h,w,3),dtype=np.uint8)
     for y in range(h):
         r=y/h; bg[y]=[int(160*(1-r)),int(90+60*r),int(190+65*r)]
-    for rx in range(0,w,80):
-        pts=np.array([[rx,0],[rx+40,0],[rx+130,h],[rx+80,h]],np.int32)
-        ov=bg.copy(); cv2.fillPoly(ov,[pts],(200,230,255)); bg=cv2.addWeighted(bg,0.91,ov,0.09,0)
-    rng=np.random.default_rng(7)
-    for _ in range(40): cv2.circle(bg,(int(rng.integers(0,w)),int(rng.integers(0,h))),int(rng.integers(3,14)),(220,240,255),1)
     return bg
 
 def make_sunset_bg(h,w):
@@ -607,7 +923,6 @@ def make_sunset_bg(h,w):
     for y in range(h):
         r=y/h; bg[y]=[int(20+40*r),int(60*(1-r)+30*r),int(180*(1-r)+10*r)]
     cv2.circle(bg,(w//2,h//2+50),75,(20,170,255),-1)
-    cv2.circle(bg,(w//2,h//2+50),90,(10,110,190),10)
     return bg
 
 def make_matrix_bg(h,w):
@@ -615,8 +930,8 @@ def make_matrix_bg(h,w):
     for col_x in range(0,w,14):
         ln=int(rng.integers(5,max(6,h//14))); sy=int(rng.integers(0,h))
         for i in range(ln):
-            y=(sy+i*14)%h; b=max(40,255-i*20)
-            cv2.putText(bg,chars[int(rng.integers(0,len(chars)))],(col_x,y),cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,b,0),1)
+            y2=(sy+i*14)%h; b=max(40,255-i*20)
+            cv2.putText(bg,chars[int(rng.integers(0,len(chars)))],(col_x,y2),cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,b,0),1)
     return bg
 
 _BG_CACHE={}
@@ -633,184 +948,256 @@ def composite(person,bg,mask):
     return np.clip(person*a+bg*(1-a),0,255).astype(np.uint8)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ★  LEFT CLICK PANEL
+# ★  IMPROVED SIDEBAR UI
 # ─────────────────────────────────────────────────────────────────────────────
 
 class SidebarUI:
-    """
-    Renders a fixed-width left panel onto the combined frame and records
-    bounding boxes of every clickable button so mouse events can be routed.
-
-    Coordinate system: the panel lives at x=[0, PANEL_W) in the FULL window
-    (panel + video side by side).
-    """
-
     def __init__(self):
-        # Each entry: (y1, y2, action_type, action_value)
         self.hit_boxes: list = []
+        self._frame_count = 0
 
-    # ── helpers ───────────────────────────────────────────────────────────────
+    # ── drawing helpers ───────────────────────────────────────────────────────
     @staticmethod
-    def _rect(img, x1, y1, x2, y2, col, radius=4):
-        """Filled rounded-ish rectangle (simple approximation)."""
-        cv2.rectangle(img, (x1+radius, y1), (x2-radius, y2), col, -1)
-        cv2.rectangle(img, (x1, y1+radius), (x2, y2-radius), col, -1)
-        for cx, cy in [(x1+radius,y1+radius),(x2-radius,y1+radius),
-                       (x1+radius,y2-radius),(x2-radius,y2-radius)]:
-            cv2.circle(img, (cx,cy), radius, col, -1)
+    def _rounded_rect(img, x1, y1, x2, y2, col, r=5):
+        cv2.rectangle(img, (x1+r, y1), (x2-r, y2), col, -1)
+        cv2.rectangle(img, (x1, y1+r), (x2, y2-r), col, -1)
+        for cx, cy in [(x1+r,y1+r),(x2-r,y1+r),(x1+r,y2-r),(x2-r,y2-r)]:
+            cv2.circle(img, (cx,cy), r, col, -1)
 
     @staticmethod
-    def _border(img, x1, y1, x2, y2, col, thick=1):
-        cv2.rectangle(img, (x1,y1), (x2,y2), col, thick)
+    def _gradient_rect(img, x1, y1, x2, y2, col_top, col_bot):
+        """Simple vertical gradient fill."""
+        rh = max(1, y2 - y1)
+        for dy in range(rh):
+            t = dy / rh
+            c = tuple(int(col_top[i]*(1-t) + col_bot[i]*t) for i in range(3))
+            cv2.line(img, (x1, y1+dy), (x2, y1+dy), c, 1)
 
-    def _section_header(self, panel, y, label):
-        cv2.rectangle(panel, (0,y), (PANEL_W, y+SECTION_H), C_SECTION_BG, -1)
-        # accent line on left
-        cv2.rectangle(panel, (0,y), (3, y+SECTION_H), C_BTN_ACTIVE, -1)
-        cv2.putText(panel, label, (8, y+SECTION_H-6),
-                    FONT, FONT_SEC, C_SECTION_TEXT, 1, cv2.LINE_AA)
+    def _section_header(self, panel, y, label, icon_col=None):
+        """Section header with left accent bar and optional icon dot."""
+        cv2.rectangle(panel, (0, y), (PANEL_W, y+SECTION_H), C_SECTION_BG, -1)
+        # gradient accent strip at top of section
+        for i in range(3):
+            alpha = 1.0 - i / 3
+            col = tuple(int(v*alpha) for v in C_BTN_ACTIVE)
+            cv2.rectangle(panel, (0, y+i), (PANEL_W, y+i+1), col, -1)
+        # Left bar
+        cv2.rectangle(panel, (0, y), (3, y+SECTION_H), C_BTN_ACTIVE, -1)
+        if icon_col:
+            cv2.circle(panel, (12, y+SECTION_H//2), 4, icon_col, -1)
+            cv2.circle(panel, (12, y+SECTION_H//2), 4, (200,200,200), 1)
+            tx = 22
+        else:
+            tx = 8
+        cv2.putText(panel, label, (tx, y+SECTION_H-6),
+                    FONT, FS_SEC, C_SECTION_TEXT, 1, cv2.LINE_AA)
         return y + SECTION_H
 
-    def _button(self, panel, y, label, shortcut, active, col_active=None):
-        """Draw one button row. Returns bottom y."""
-        x1,y1,x2,y2 = PAD, y, PANEL_W-PAD, y+BTN_H-2
-        bg_col = (col_active or C_BTN_ACTIVE) if active else C_BTN
-        self._rect(panel, x1, y1, x2, y2, bg_col)
-        self._border(panel, x1, y1, x2, y2,
-                     (col_active or C_BTN_ACTIVE) if active else C_BORDER)
-        txt_col = C_ACTIVE_TEXT if active else C_TEXT
-        sc_col  = (20,20,20) if active else (100,100,130)
-        cv2.putText(panel, f"[{shortcut}]", (x1+4, y1+BTN_H-10),
-                    FONT, 0.32, sc_col, 1, cv2.LINE_AA)
-        cv2.putText(panel, label, (x1+26, y1+BTN_H-10),
-                    FONT, FONT_SMALL, txt_col, 1, cv2.LINE_AA)
+    def _button(self, panel, y, label, shortcut, active, is_new=False, dot_col=None):
+        """Draw a filter button row. Returns bottom y."""
+        x1, y1, x2, y2 = PAD, y+1, PANEL_W-PAD, y+BTN_H-1
+
+        if active:
+            self._gradient_rect(panel, x1, y1, x2, y2, C_BTN_ACTIVE, C_BTN_ACTIVE2)
+            # Glow border
+            cv2.rectangle(panel, (x1-1,y1-1), (x2+1,y2+1), C_BORDER_ACT, 1)
+            txt_col = C_ACTIVE_TEXT
+            sc_col  = (10, 10, 10)
+            # Active indicator arrow on right
+            ax = x2 - 6
+            ay = (y1 + y2) // 2
+            pts = np.array([[ax-5,ay-4],[ax,ay],[ax-5,ay+4]], np.int32)
+            cv2.fillPoly(panel, [pts], (10,10,10))
+        else:
+            self._rounded_rect(panel, x1, y1, x2, y2, C_BTN, r=4)
+            cv2.rectangle(panel, (x1,y1), (x2,y2), C_BORDER, 1)
+            txt_col = C_TEXT
+            sc_col  = (75, 75, 105)
+
+        # Dot indicator
+        dot_x = x1 + 10
+        dot_y = (y1 + y2) // 2
+        if dot_col:
+            d_col = (10,10,10) if active else dot_col
+            cv2.circle(panel, (dot_x, dot_y), 4, d_col, -1)
+
+        # Shortcut key badge
+        badge_x = x1 + 22
+        badge_w = 18
+        badge_y1 = dot_y - 8; badge_y2 = dot_y + 8
+        badge_col = (10,10,10) if active else (45,45,70)
+        self._rounded_rect(panel, badge_x, badge_y1, badge_x+badge_w, badge_y2, badge_col, r=2)
+        cv2.putText(panel, shortcut, (badge_x+3, badge_y1+12),
+                    FONT, 0.30, (255,255,255) if not active else (200,200,200),
+                    1, cv2.LINE_AA)
+
+        # Label
+        cv2.putText(panel, label, (badge_x+badge_w+5, dot_y+5),
+                    FONT, FS, txt_col, 1, cv2.LINE_AA)
+
+        # NEW badge
+        if is_new and not active:
+            nx = x2 - 30
+            ny1 = y1 + 5; ny2 = y2 - 5
+            self._rounded_rect(panel, nx, ny1, nx+26, ny2, C_NEW_BADGE, r=3)
+            cv2.putText(panel, "NEW", (nx+3, ny1+11),
+                        FONT, FS_BADGE, (255,255,255), 1, cv2.LINE_AA)
+
         return y + BTN_H
 
     def _bg_button(self, panel, y, label, dot_col, active):
-        x1,y1,x2,y2 = PAD, y, PANEL_W-PAD, y+BTN_H-2
-        bg_col = C_BTN_ACTIVE if active else C_BTN
-        self._rect(panel, x1, y1, x2, y2, bg_col)
-        self._border(panel, x1, y1, x2, y2, C_BTN_ACTIVE if active else C_BORDER)
-        # coloured dot
-        dot_x = x1+12; dot_y = (y1+y2)//2
-        cv2.circle(panel, (dot_x, dot_y), 6, dot_col, -1)
-        cv2.circle(panel, (dot_x, dot_y), 6, (200,200,200) if active else (80,80,80), 1)
-        txt_col = C_ACTIVE_TEXT if active else C_TEXT
-        cv2.putText(panel, label, (x1+26, y1+BTN_H-10),
-                    FONT, FONT_SMALL, txt_col, 1, cv2.LINE_AA)
+        x1,y1,x2,y2 = PAD, y+1, PANEL_W-PAD, y+BTN_H-1
+        if active:
+            self._gradient_rect(panel, x1, y1, x2, y2, C_BTN_ACTIVE, C_BTN_ACTIVE2)
+            cv2.rectangle(panel, (x1-1,y1-1),(x2+1,y2+1), C_BORDER_ACT, 1)
+            txt_col = C_ACTIVE_TEXT
+        else:
+            self._rounded_rect(panel, x1, y1, x2, y2, C_BTN, r=4)
+            cv2.rectangle(panel, (x1,y1),(x2,y2), C_BORDER, 1)
+            txt_col = C_TEXT
+
+        dot_x = x1 + 12; dot_y = (y1+y2)//2
+        cv2.circle(panel, (dot_x, dot_y), 7, dot_col, -1)
+        rim = (10,10,10) if active else (100,100,120)
+        cv2.circle(panel, (dot_x, dot_y), 7, rim, 1, cv2.LINE_AA)
+        # Shine on dot
+        cv2.circle(panel, (dot_x-2, dot_y-2), 2, (220,220,220), -1)
+
+        cv2.putText(panel, label, (x1+26, dot_y+5),
+                    FONT, FS, txt_col, 1, cv2.LINE_AA)
         return y + BTN_H
 
-    def _action_button(self, panel, y, label, col):
-        x1,y1,x2,y2 = PAD, y, PANEL_W-PAD, y+BTN_H-2
-        self._rect(panel, x1, y1, x2, y2, col)
-        self._border(panel, x1, y1, x2, y2, (200,200,200))
-        tw,_ = cv2.getTextSize(label, FONT, FONT_SMALL, 1)[0], 0
-        tx = (PANEL_W - tw[0]) // 2
-        cv2.putText(panel, label, (tx, y1+BTN_H-10),
-                    FONT, FONT_SMALL, (230,230,230), 1, cv2.LINE_AA)
+    def _action_button(self, panel, y, label, col_top, col_bot=None):
+        if col_bot is None:
+            col_bot = tuple(max(0,v-40) for v in col_top)
+        x1,y1,x2,y2 = PAD, y+1, PANEL_W-PAD, y+BTN_H-1
+        self._gradient_rect(panel, x1, y1, x2, y2, col_top, col_bot)
+        cv2.rectangle(panel, (x1,y1),(x2,y2), (200,200,220), 1)
+        # Centre text
+        (tw,th),_ = cv2.getTextSize(label, FONT, FS, 1)
+        tx = (PANEL_W - tw) // 2
+        ty = (y1 + y2 + th) // 2
+        cv2.putText(panel, label, (tx, ty), FONT, FS, (230,230,230), 1, cv2.LINE_AA)
         return y + BTN_H
+
+    # ── status bar helpers ────────────────────────────────────────────────────
+    @staticmethod
+    def _fps_bar(panel, y, fps, people):
+        """Mini status bar at bottom of logo area."""
+        # FPS colour
+        if fps >= 20:   fp_col = (0, 220, 80)
+        elif fps >= 12: fp_col = (0, 180, 255)
+        else:           fp_col = (0,  60, 220)
+
+        # FPS indicator bar
+        bar_w = min(PANEL_W-4, int((fps / 30.0) * (PANEL_W-4)))
+        cv2.rectangle(panel, (2, y+2), (PANEL_W-2, y+6), (30,30,50), -1)
+        cv2.rectangle(panel, (2, y+2), (2+bar_w,   y+6), fp_col, -1)
+
+        cv2.putText(panel, f"{fps:.0f} fps", (4, y+18),
+                    FONT, 0.36, fp_col, 1, cv2.LINE_AA)
+        p_col = (0,200,255) if people > 0 else (80,80,100)
+        cv2.putText(panel, f"People: {people}", (PANEL_W-80, y+18),
+                    FONT, 0.33, p_col, 1, cv2.LINE_AA)
 
     # ── main render ───────────────────────────────────────────────────────────
-    def render(self, frame_h, body_key, face_key, bg_idx, show_boxes, fps, people, age_stage):
-        """
-        Build a (frame_h × PANEL_W) panel image and a fresh hit_boxes list.
-        Returns: panel (BGR ndarray)
-        """
+    def render(self, frame_h, body_key, face_key, bg_idx,
+               show_boxes, fps, people, age_stage):
+        self._frame_count += 1
         panel = np.zeros((frame_h, PANEL_W, 3), dtype=np.uint8)
-        panel[:] = C_BG
-        # subtle scanline effect
-        panel[::2, :] = np.clip(panel[::2].astype(np.int16) + 4, 0, 255).astype(np.uint8)
+
+        # Background gradient
+        for y in range(frame_h):
+            r = y / frame_h
+            panel[y] = [int(14*(1-r)+10*r), int(14*(1-r)+12*r), int(22*(1-r)+18*r)]
+
+        # Subtle scanlines
+        panel[::3, :] = np.clip(panel[::3].astype(np.int16) + 5, 0, 255).astype(np.uint8)
 
         self.hit_boxes = []
         y = 0
 
-        # ── logo bar ──────────────────────────────────────────────────────────
-        cv2.rectangle(panel, (0,0), (PANEL_W, 38), (12,12,24), -1)
-        cv2.rectangle(panel, (0,36), (PANEL_W, 38), C_BTN_ACTIVE, -1)
-        cv2.putText(panel, "FILTER CAM", (8, 26),
-                    FONT, 0.50, C_ACCENT, 1, cv2.LINE_AA)
-        fps_col = (0,220,80) if fps>=20 else (0,180,255) if fps>=12 else (0,60,220)
-        cv2.putText(panel, f"{fps:.0f}fps  P:{people}", (PANEL_W-95, 26),
-                    FONT, 0.38, fps_col, 1, cv2.LINE_AA)
-        y = 40
+        # ── LOGO BAR ──────────────────────────────────────────────────────────
+        self._gradient_rect(panel, 0, 0, PANEL_W, 44, (16,16,30), (10,10,20))
+        # Glowing accent line under header
+        for i, a in enumerate([0.2, 0.5, 1.0, 0.5, 0.2]):
+            cv2.line(panel, (0, 44+i), (PANEL_W, 44+i),
+                     tuple(int(v*a) for v in C_BTN_ACTIVE), 1)
+
+        cv2.putText(panel, "FILTER", (6, 20), FONT, 0.55, C_ACCENT, 1, cv2.LINE_AA)
+        cv2.putText(panel, "CAM", (76, 20), FONT, 0.55, C_BTN_ACTIVE, 1, cv2.LINE_AA)
+        # Version tag
+        cv2.putText(panel, "v2.0", (PANEL_W-34, 14), FONT, 0.28, (70,70,100), 1, cv2.LINE_AA)
+
+        self._fps_bar(panel, 24, fps, people)
+        y = 50
 
         # ── BODY FILTERS ──────────────────────────────────────────────────────
-        y = self._section_header(panel, y, "  BODY FILTER")
-        for (key, sc, lbl) in BODY_FILTER_LIST:
+        y = self._section_header(panel, y, "BODY FILTER", CAT_BODY)
+        for (key, sc, lbl, is_new) in BODY_FILTER_LIST:
+            dot = CAT_NEW if is_new else CAT_BODY
             y0 = y
-            y  = self._button(panel, y, lbl, sc, key==body_key)
+            y  = self._button(panel, y, lbl, sc, key==body_key, is_new, dot)
             self.hit_boxes.append((y0, y, 'body', key))
 
-        y += 3  # small gap
+        y += 2
 
         # ── FACE EFFECTS ──────────────────────────────────────────────────────
-        y = self._section_header(panel, y, "  FACE EFFECT")
+        y = self._section_header(panel, y, "FACE EFFECT", CAT_FACE)
         for (key, sc, lbl) in FACE_EFFECT_LIST:
             is_active = (key == face_key)
             display   = lbl
-            if key==ord('p') and is_active:
-                ages=["Baby","Child","Teen","Adult","Old"]
+            if key == ord('p') and is_active:
+                ages = ["Baby","Child","Teen","Adult","Old"]
                 display = f"Age:{ages[age_stage]}"
             y0 = y
-            y  = self._button(panel, y, display, sc, is_active)
+            y  = self._button(panel, y, display, sc, is_active, False, CAT_FACE)
             self.hit_boxes.append((y0, y, 'face', key))
 
-        y += 3
+        y += 2
 
         # ── BACKGROUND ────────────────────────────────────────────────────────
-        y = self._section_header(panel, y, "  BACKGROUND")
+        y = self._section_header(panel, y, "BACKGROUND", CAT_BG)
         for i, (name, dot_col) in enumerate(BG_LIST):
-            active = (i < len(BG_NAMES) and BG_NAMES[i-1 if i>0 else 0]==name and bg_idx==i-1) \
-                     or (name=="None" and bg_idx==-1) \
-                     or (i < len(BG_NAMES) and bg_idx==i)
-            # simpler active check
-            if name=="None":
-                active = (bg_idx==-1)
-            else:
-                active = (bg_idx == i)
+            active = (name=="None" and bg_idx==-1) or (i < len(BG_NAMES) and bg_idx==i)
             y0 = y
             y  = self._bg_button(panel, y, name, dot_col, active)
-            val = i if name!="None" else -1
+            val = i if name != "None" else -1
             self.hit_boxes.append((y0, y, 'bg', val))
 
         y += 4
 
-        # ── ACTION BUTTONS ────────────────────────────────────────────────────
-        y = self._section_header(panel, y, "  ACTIONS")
+        # ── ACTIONS ───────────────────────────────────────────────────────────
+        y = self._section_header(panel, y, "ACTIONS")
 
-        # Bounding-box toggle
-        box_col = (C_BOX_BTN[0]+30, C_BOX_BTN[1]+30, C_BOX_BTN[2]) if show_boxes else C_BOX_BTN
-        lbl_box = "[K] Boxes ON " if show_boxes else "[K] Boxes OFF"
-        y0=y; y=self._action_button(panel, y, lbl_box, box_col)
+        box_top = C_BOX_BTN_ON if show_boxes else C_BOX_BTN_OFF
+        lbl_box = "Boxes: ON" if show_boxes else "Boxes: OFF"
+        y0=y; y=self._action_button(panel, y, f"[K] {lbl_box}", box_top)
         self.hit_boxes.append((y0, y, 'boxes', None))
 
-        # Save
-        y0=y; y=self._action_button(panel, y, "[S] Save Screenshot", C_SAVE_BTN)
+        y0=y; y=self._action_button(panel, y, "[S]  Save Screenshot",
+                                    (20, 100, 180), (10, 70, 130))
         self.hit_boxes.append((y0, y, 'save', None))
 
-        # Quit
-        y0=y; y=self._action_button(panel, y, "[Q] Quit", C_QUIT_BTN)
+        y0=y; y=self._action_button(panel, y, "[Q]  Quit",
+                                    (140, 30, 30), (100, 20, 20))
         self.hit_boxes.append((y0, y, 'quit', None))
 
-        # ── bottom accent ─────────────────────────────────────────────────────
+        # ── Bottom accent ─────────────────────────────────────────────────────
         cv2.rectangle(panel, (0, frame_h-2), (PANEL_W, frame_h), C_BTN_ACTIVE, -1)
 
-        # vertical right border with glow
-        for i,alpha in enumerate([0.12,0.25,0.50,1.0]):
-            x = PANEL_W - 1 - i
-            if x >= 0:
-                panel[:,x] = np.clip(
-                    panel[:,x].astype(np.float32)*(1-alpha) +
-                    np.array(C_BTN_ACTIVE,dtype=np.float32)*alpha, 0, 255
+        # Right edge glow
+        for i, a in enumerate([0.08, 0.18, 0.40, 0.80, 1.0]):
+            xr = PANEL_W - 1 - i
+            if xr >= 0:
+                panel[:,xr] = np.clip(
+                    panel[:,xr].astype(np.float32)*(1-a) +
+                    np.array(C_BTN_ACTIVE, dtype=np.float32)*a, 0, 255
                 ).astype(np.uint8)
 
         return panel
 
     def hit_test(self, x, y):
-        """
-        Returns (action_type, action_value) if (x,y) is inside panel,
-        else None.  x,y are in FULL-WINDOW coordinates.
-        """
         if x < 0 or x >= PANEL_W:
             return None
         for (y1, y2, atype, aval) in self.hit_boxes:
@@ -819,35 +1206,87 @@ class SidebarUI:
         return None
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MOUSE CALLBACK STATE
+# MOUSE STATE
 # ─────────────────────────────────────────────────────────────────────────────
 
 class MouseState:
     def __init__(self):
-        self.x = 0
-        self.y = 0
-        self.clicked_action = None   # (type, value) set on left-button-up
+        self.x = 0; self.y = 0
+        self.clicked_action = None
 
 def make_mouse_callback(ms: MouseState):
     def callback(event, x, y, flags, param):
-        ms.x = x
-        ms.y = y
+        ms.x = x; ms.y = y
         if event == cv2.EVENT_LBUTTONUP:
-            ms.clicked_action = (x, y)   # store raw coords, resolved later
+            ms.clicked_action = (x, y)
     return callback
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HUD (overlaid on the video portion only)
+# HUD (overlaid on the video portion)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def draw_hud(frame, body_name, face_name, bg_name, fps, people):
-    h,w=frame.shape[:2]
-    ov=frame.copy(); cv2.rectangle(ov,(0,0),(w,50),(0,0,0),-1)
-    frame=cv2.addWeighted(ov,0.45,frame,0.55,0)
-    cv2.putText(frame,f"Body: {body_name}",(8,20),FONT,0.56,(0,255,180),1,cv2.LINE_AA)
-    info=f"Face: {face_name or 'None'}   BG: {bg_name or 'None'}   People: {people}"
-    cv2.putText(frame,info,(8,42),FONT,0.40,(140,140,160),1,cv2.LINE_AA)
+    h, w = frame.shape[:2]
+    # semi-transparent top bar
+    ov = frame.copy()
+    cv2.rectangle(ov, (0,0), (w,52), (0,0,0), -1)
+    frame = cv2.addWeighted(ov, 0.50, frame, 0.50, 0)
+
+    # Filter name pill
+    pill_lbl = f"  {body_name}  "
+    (pw,_),_ = cv2.getTextSize(pill_lbl, FONT, 0.52, 1)
+    cv2.rectangle(frame, (6,4), (pw+12,26), (0,160,100), -1)
+    cv2.putText(frame, pill_lbl, (8,20), FONT, 0.52, (10,10,10), 1, cv2.LINE_AA)
+
+    # Face / bg info
+    info = []
+    if face_name: info.append(f"Face: {face_name}")
+    if bg_name:   info.append(f"BG: {bg_name}")
+    info.append(f"People: {people}")
+    cv2.putText(frame, "   ".join(info), (8,44), FONT, 0.38, (130,130,155), 1, cv2.LINE_AA)
+
+    # FPS top-right
+    fps_col = (0,220,80) if fps>=20 else (0,180,255) if fps>=12 else (0,60,220)
+    cv2.putText(frame, f"{fps:.0f}fps", (w-64,20), FONT, 0.52, fps_col, 1, cv2.LINE_AA)
+
+    # Thin accent line under HUD
+    for i, a in enumerate([1.0, 0.5, 0.2]):
+        cv2.line(frame, (0,52+i), (w,52+i), tuple(int(v*a) for v in (0,200,120)), 1)
+
     return frame
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOAST NOTIFICATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Toast:
+    def __init__(self):
+        self.msg   = ""
+        self.until = 0.0
+        self.col   = (0,200,130)
+
+    def show(self, msg, col=(0,200,130), duration=2.0):
+        self.msg   = msg
+        self.until = time.time() + duration
+        self.col   = col
+
+    def draw(self, frame):
+        if time.time() > self.until:
+            return frame
+        h, w = frame.shape[:2]
+        (tw,th),_ = cv2.getTextSize(self.msg, FONT, 0.55, 1)
+        px, py = (w-tw)//2, h-80
+        fade = min(1.0, (self.until - time.time()) / 0.4)  # fade out last 0.4s
+        ov = frame.copy()
+        cv2.rectangle(ov, (px-12,py-th-8), (px+tw+12, py+6), (0,0,0), -1)
+        cv2.rectangle(ov, (px-13,py-th-9), (px+tw+13, py+7),
+                      tuple(int(v*fade) for v in self.col), 2)
+        frame = cv2.addWeighted(frame, 1-0.7*fade, ov, 0.7*fade, 0)
+        cv2.putText(frame, self.msg, (px, py),
+                    FONT, 0.55,
+                    tuple(int(v*fade) for v in self.col),
+                    1, cv2.LINE_AA)
+        return frame
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN
@@ -856,14 +1295,15 @@ def draw_hud(frame, body_name, face_name, bg_name, fps, people):
 def main():
     cameras = find_camera()
     if not cameras:
-        print("No webcam found!")
-        input("Press Enter to exit..."); return
+        print("No webcam found!"); input("Press Enter to exit..."); return
 
     cam_index = cameras[0]
-    if len(cameras)>1:
-        print(f"Multiple cameras: {cameras}  — Enter index: ",end="",flush=True)
-        try: cam_index=cameras[int(input().strip())]
-        except Exception: cam_index=cameras[0]
+    if len(cameras) > 1:
+        print(f"Multiple cameras: {cameras}  — Enter index [0]: ", end="", flush=True)
+        try:
+            cam_index = cameras[int(input().strip())]
+        except Exception:
+            cam_index = cameras[0]
 
     try:
         seg  = YOLOSegmentor()
@@ -885,28 +1325,29 @@ def main():
     show_boxes      = False
     prev_time       = time.time()
     save_dir        = os.path.expanduser("~/Pictures")
-    os.makedirs(save_dir,exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True)
 
     sidebar  = SidebarUI()
     ms       = MouseState()
-    WIN_NAME = "Human Filter Cam"
+    toast    = Toast()
+    WIN_NAME = "Filter Cam"
     cv2.namedWindow(WIN_NAME, cv2.WINDOW_NORMAL)
     cv2.setMouseCallback(WIN_NAME, make_mouse_callback(ms))
 
-    print("\n========================================================")
-    print("  Human Detection + Filter + Face Effects Cam — Ready!")
-    print("  Click the LEFT PANEL or use keyboard shortcuts")
-    print("  Q / Esc  to quit")
-    print("========================================================\n")
+    print("\n" + "="*58)
+    print("  Filter Cam v2.0  — Ready!")
+    print("  Click LEFT PANEL or use keyboard shortcuts.")
+    print("  NEW: [R] Skeleton  [X] Stick Figure  [U] Bubbles")
+    print("  Q / Esc to quit.")
+    print("="*58 + "\n")
 
     quit_flag = False
 
     while not quit_flag:
         ret, frame = cap.read()
         if not ret: continue
-        frame = cv2.flip(frame,1)
-        now   = time.time()
-        t     = now
+        frame = cv2.flip(frame, 1)
+        t     = time.time()
 
         # ── YOLO ─────────────────────────────────────────────────────────
         mask, boxes = seg.get_mask_and_boxes(frame)
@@ -917,44 +1358,44 @@ def main():
 
         # ── Virtual background ────────────────────────────────────────────
         if bg_idx >= 0:
-            h_f,w_f = frame.shape[:2]
-            bg       = get_bg(BG_NAMES[bg_idx],h_f,w_f)
-            filtered = composite(filtered,bg,mask)
+            h_f, w_f = frame.shape[:2]
+            bg        = get_bg(BG_NAMES[bg_idx], h_f, w_f)
+            filtered  = composite(filtered, bg, mask)
 
         # ── Bounding boxes ────────────────────────────────────────────────
         if show_boxes:
-            for i,box in enumerate(boxes):
-                x1,y1,x2,y2=box
-                cv2.rectangle(filtered,(x1,y1),(x2,y2),(0,255,200),2)
-                cv2.putText(filtered,f"Person {i+1}",(x1+4,y1-6),FONT,0.52,(255,255,255),1)
+            for i, box in enumerate(boxes):
+                x1,y1,x2,y2 = box
+                cv2.rectangle(filtered,(x1,y1),(x2,y2),(0,220,140),2)
+                cv2.putText(filtered,f"Person {i+1}",(x1+4,y1-6),FONT,0.48,(255,255,255),1)
 
         # ── Face effect ───────────────────────────────────────────────────
-        f_name=None
+        f_name = None
         if face_effect_key is not None:
-            faces=face.detect(frame)
-            f_name,f_fn=FACE_EFFECTS[face_effect_key]
-            if face_effect_key==ord('p'):
-                filtered=effect_age_progression(filtered,faces,t)
+            faces = face.detect(frame)
+            f_name, f_fn = FACE_EFFECTS[face_effect_key]
+            if face_effect_key == ord('p'):
+                filtered = effect_age_progression(filtered, faces, t)
             else:
-                filtered=f_fn(filtered,faces,t)
+                filtered = f_fn(filtered, faces, t)
 
-        # ── HUD on video ──────────────────────────────────────────────────
-        fps=1.0/max(now-prev_time,1e-6); prev_time=now
-        bg_name=BG_NAMES[bg_idx] if bg_idx>=0 else None
-        filtered=draw_hud(filtered,b_name,f_name,bg_name,fps,len(boxes))
+        # ── HUD ───────────────────────────────────────────────────────────
+        fps       = 1.0 / max(t - prev_time, 1e-6)
+        prev_time = t
+        bg_name   = BG_NAMES[bg_idx] if bg_idx >= 0 else None
+        filtered  = draw_hud(filtered, b_name, f_name, bg_name, fps, len(boxes))
+        filtered  = toast.draw(filtered)
 
-        # ── Build left panel ──────────────────────────────────────────────
-        h_f,w_f=filtered.shape[:2]
-        panel=sidebar.render(h_f, body_filter_key, face_effect_key,
-                             bg_idx, show_boxes, fps, len(boxes),
-                             AGE_PROGRESSION_STAGE[0])
+        # ── Sidebar ───────────────────────────────────────────────────────
+        h_f, w_f = filtered.shape[:2]
+        panel = sidebar.render(h_f, body_filter_key, face_effect_key,
+                               bg_idx, show_boxes, fps, len(boxes),
+                               AGE_PROGRESSION_STAGE[0])
 
-        # ── Composite: panel | video ──────────────────────────────────────
-        display=np.hstack([panel, filtered])
-
+        display = np.hstack([panel, filtered])
         cv2.imshow(WIN_NAME, display)
 
-        # ── Handle mouse click (resolved against sidebar hit_boxes) ───────
+        # ── Mouse click handling ──────────────────────────────────────────
         if ms.clicked_action is not None:
             cx, cy = ms.clicked_action
             ms.clicked_action = None
@@ -963,54 +1404,69 @@ def main():
                 atype, aval = hit
                 if atype == 'body':
                     body_filter_key = aval
+                    toast.show(f"Filter: {BODY_FILTERS[aval][0]}")
                 elif atype == 'face':
                     if face_effect_key == aval:
                         if aval == ord('p'):
-                            AGE_PROGRESSION_STAGE[0]=(AGE_PROGRESSION_STAGE[0]+1)%5
+                            AGE_PROGRESSION_STAGE[0] = (AGE_PROGRESSION_STAGE[0]+1) % 5
+                            ages = ["Baby","Child","Teen","Adult","Elderly"]
+                            toast.show(f"Age: {ages[AGE_PROGRESSION_STAGE[0]]}")
                         else:
-                            face_effect_key=None
+                            face_effect_key = None
+                            toast.show("Face effect: Off", (140,140,160))
                     else:
-                        face_effect_key=aval
-                        if aval==ord('p'): AGE_PROGRESSION_STAGE[0]=0
+                        face_effect_key = aval
+                        if aval == ord('p'): AGE_PROGRESSION_STAGE[0] = 0
+                        toast.show(f"Effect: {FACE_EFFECTS[aval][0]}", (200,80,220))
                 elif atype == 'bg':
                     bg_idx = aval
+                    name   = BG_NAMES[bg_idx] if bg_idx >= 0 else "None"
+                    toast.show(f"Background: {name}", (220,140,20))
                 elif atype == 'boxes':
-                    show_boxes=not show_boxes
+                    show_boxes = not show_boxes
+                    toast.show(f"Boxes: {'ON' if show_boxes else 'OFF'}", (20,130,20))
                 elif atype == 'save':
-                    ts=time.strftime("%Y%m%d_%H%M%S")
-                    path=os.path.join(save_dir,f"filterCam_{ts}.png")
-                    cv2.imwrite(path,display)
+                    ts   = time.strftime("%Y%m%d_%H%M%S")
+                    path = os.path.join(save_dir, f"filterCam_{ts}.png")
+                    cv2.imwrite(path, display)
+                    toast.show(f"Saved!", (20,120,200))
                     print(f"Saved → {path}")
                 elif atype == 'quit':
-                    quit_flag=True
+                    quit_flag = True
 
-        # ── Keyboard ──────────────────────────────────────────────────────
-        key=cv2.waitKey(1)&0xFF
-        if key in (ord('q'),27):
+        # ── Keyboard shortcuts ────────────────────────────────────────────
+        key = cv2.waitKey(1) & 0xFF
+        if key in (ord('q'), 27):
             break
         elif key in BODY_FILTERS:
-            body_filter_key=key
+            body_filter_key = key
+            toast.show(f"Filter: {BODY_FILTERS[key][0]}")
         elif key in FACE_EFFECTS:
-            if face_effect_key==key:
-                if key==ord('p'): AGE_PROGRESSION_STAGE[0]=(AGE_PROGRESSION_STAGE[0]+1)%5
-                else: face_effect_key=None
+            if face_effect_key == key:
+                if key == ord('p'):
+                    AGE_PROGRESSION_STAGE[0] = (AGE_PROGRESSION_STAGE[0]+1) % 5
+                else:
+                    face_effect_key = None
             else:
-                face_effect_key=key
-        elif key==ord('b'):
-            bg_idx=(bg_idx+1)%len(BG_NAMES)
-        elif key==ord('n'):
-            bg_idx=-1
-        elif key==ord('k'):
-            show_boxes=not show_boxes
-        elif key==ord('s'):
-            ts=time.strftime("%Y%m%d_%H%M%S")
-            path=os.path.join(save_dir,f"filterCam_{ts}.png")
-            cv2.imwrite(path,display)
+                face_effect_key = key
+        elif key == ord('b'):
+            bg_idx = (bg_idx + 1) % len(BG_NAMES)
+            toast.show(f"Background: {BG_NAMES[bg_idx]}", (220,140,20))
+        elif key == ord('n'):
+            bg_idx = -1
+            toast.show("Background: Off", (140,140,160))
+        elif key == ord('k'):
+            show_boxes = not show_boxes
+        elif key == ord('s'):
+            ts   = time.strftime("%Y%m%d_%H%M%S")
+            path = os.path.join(save_dir, f"filterCam_{ts}.png")
+            cv2.imwrite(path, display)
+            toast.show(f"Saved!", (20,120,200))
             print(f"Saved → {path}")
 
     cap.release()
     cv2.destroyAllWindows()
     print("Bye!")
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
